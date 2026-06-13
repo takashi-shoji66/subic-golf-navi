@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1D9E75">
+<title>スービック ゴルフナビ</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --green: #1D9E75; --green-d: #0F6E56; --hard: #D85A30;
+    --bg: #0f1410; --panel: #1a211c; --panel2: #232b25;
+    --txt: #e8ede9; --txt2: #9db0a3; --border: #2e372f;
+  }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; background: var(--bg); color: var(--txt); overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  header { background: var(--green-d); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header .status { margin-left: auto; font-size: 11px; opacity: 0.9; display: flex; align-items: center; gap: 5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #6f6; }
+  .dot.offline { background: #fa0; }
+
+  .toolbar { display: flex; gap: 6px; padding: 8px 10px; background: var(--panel); flex-shrink: 0; overflow-x: auto; }
+  .tb-btn { padding: 7px 13px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--txt2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+  .tb-btn.active { background: var(--green); color: #fff; border-color: var(--green); font-weight: 600; }
+
+  #map { flex: 1; width: 100%; background: #1a211c; }
+
+  #panel { background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0; max-height: 42vh; overflow-y: auto; transition: transform .25s; }
+  .panel-drag { text-align: center; padding: 6px; color: var(--txt2); font-size: 11px; }
+  .panel-body { padding: 4px 16px 18px; }
+
+  .hi-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .hi-num { font-size: 22px; font-weight: 700; color: var(--green); }
+  .hi-par { font-size: 14px; color: var(--txt2); }
+  .hi-badge { margin-left: auto; font-size: 11px; padding: 3px 9px; border-radius: 20px; background: var(--panel2); color: var(--txt2); }
+  .hi-badge.hard { background: rgba(216,90,48,.18); color: #f0a585; }
+  .hi-yards { display: flex; gap: 14px; font-size: 12px; color: var(--txt2); margin-bottom: 10px; flex-wrap: wrap; }
+  .hi-yards b { color: var(--txt); font-weight: 600; }
+  .hi-tip { font-size: 14px; line-height: 1.7; color: var(--txt); }
+  .hi-dist { margin-top: 10px; padding: 8px 12px; background: var(--panel2); border-radius: 8px; font-size: 13px; color: var(--txt2); display: none; }
+  .hi-dist b { color: var(--green); font-size: 17px; font-weight: 700; }
+  .placeholder { color: var(--txt2); font-size: 13px; line-height: 1.7; padding: 8px 0; }
+
+  .leaflet-popup-content-wrapper { background: var(--panel2); color: var(--txt); border-radius: 8px; }
+  .leaflet-popup-tip { background: var(--panel2); }
+  .leaflet-popup-content { font-size: 13px; margin: 10px 12px; }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--txt2); }
+
+  .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; background: var(--green); border: 2px solid #fff; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,.4); }
+  .pin.hard { background: var(--hard); }
+  .pin span { transform: rotate(45deg); color: #fff; font-size: 12px; font-weight: 700; }
+
+  #install-banner { display: none; position: absolute; bottom: 14px; left: 14px; right: 14px; background: var(--green-d); color: #fff; padding: 12px 14px; border-radius: 10px; font-size: 13px; align-items: center; gap: 10px; z-index: 1000; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+  #install-banner button { margin-left: auto; background: #fff; color: var(--green-d); border: none; padding: 6px 14px; border-radius: 7px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  #install-banner .close-x { background: transparent; color: #fff; opacity: .7; padding: 6px; }
+
+  .cache-toast { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); background: var(--panel2); color: var(--txt); padding: 8px 16px; border-radius: 20px; font-size: 12px; z-index: 1000; border: 1px solid var(--border); display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>⛳ スービック ゴルフナビ</h1>
+    <div class="status"><span class="dot" id="net-dot"></span><span id="net-txt">オンライン</span></div>
+  </header>
+
+  <div class="toolbar">
+    <button class="tb-btn active" id="btn-sat" onclick="setLayer('sat')">航空写真</button>
+    <button class="tb-btn" id="btn-street" onclick="setLayer('street')">地図</button>
+    <button class="tb-btn" id="btn-gps" onclick="toggleGPS()">📍 現在地</button>
+    <button class="tb-btn" id="btn-cache" onclick="cacheCourse()">⬇ オフライン保存</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="panel">
+    <div class="panel-drag">▲ ホール情報</div>
+    <div class="panel-body" id="panel-body">
+      <div class="placeholder">
+        地図上の番号ピンをタップすると、各ホールの攻略情報が表示されます。<br>
+        橙色のピンは難関ホール（ハンデ1〜4）です。<br><br>
+        「📍 現在地」でGPS表示、「⬇ オフライン保存」でコース範囲の地図を端末に保存します。
+      </div>
+    </div>
+  </div>
+
+  <div id="install-banner">
+    <span>ホーム画面に追加してオフラインで使えます</span>
+    <button onclick="doInstall()">追加</button>
+    <button class="close-x" onclick="document.getElementById('install-banner').style.display='none'">✕</button>
+  </div>
+  <div class="cache-toast" id="cache-toast"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="holes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
