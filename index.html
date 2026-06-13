@@ -53,8 +53,8 @@
 <body>
 <div id="app">
   <header>
-    <h1>⛳ <span id="hole-title">1番ホール</span> <span class="ver">v3.1</span></h1>
-    <div id="compass">
+    <h1>⛳ <span id="hole-title">1番ホール</span> <span class="ver">v3.2</span></h1>
+    <span id="net-dot" style="width:8px;height:8px;border-radius:50%;background:#6f6;flex-shrink:0;display:inline-block;"></span><div id="compass">
       <div id="compass-dial"><div id="compass-needle"></div></div>
       <div id="compass-txt"><button id="enable-compass" onclick="enableCompass()">方角ON</button></div>
     </div>
@@ -89,6 +89,7 @@
     <div class="tb-sep"></div>
     <button class="tb-btn" id="b-view" onclick="toggleView()">プレーヤー目線</button>
     <button class="tb-btn" id="b-gps" onclick="toggleGPS()">📍 現在地</button>
+    <button class="tb-btn" id="b-offline" onclick="cacheOffline()">⬇ オフライン保存</button>
     <div class="tb-sep"></div>
     <button class="tb-btn active" id="b-unit" onclick="toggleUnit()">yd / m</button>
   </div>
@@ -397,6 +398,79 @@ draw();
 map.fitBounds(L.latLngBounds(cur()),{padding:[70,70]});
 </script>
 <script>
+
+// === ネット状態 ===
+function updateNetStatus(){
+  var online = navigator.onLine;
+  document.getElementById('net-dot').style.background = online ? '#6f6' : '#fa0';
+}
+window.addEventListener('online', updateNetStatus);
+window.addEventListener('offline', updateNetStatus);
+updateNetStatus();
+
+// === タイル座標計算 ===
+function lon2tile(lon,z){ return Math.floor((lon+180)/360*Math.pow(2,z)); }
+function lat2tile(lat,z){ return Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z)); }
+
+function buildTileUrls(){
+  // コース範囲（全18ホールを内包する範囲）
+  var SW=[14.8075, 120.3060], NE=[14.8195, 120.3260];
+  var urls=[];
+  for(var z=14;z<=18;z++){
+    var x1=lon2tile(SW[1],z), x2=lon2tile(NE[1],z);
+    var y1=lat2tile(NE[0],z), y2=lat2tile(SW[0],z);
+    for(var x=Math.min(x1,x2);x<=Math.max(x1,x2);x++)
+      for(var y=Math.min(y1,y2);y<=Math.max(y1,y2);y++)
+        urls.push('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x);
+  }
+  return urls;
+}
+
+// === オフライン保存 ===
+function cacheOffline(){
+  if(!('serviceWorker' in navigator)){
+    showToast('Service Workerが利用できません');
+    return;
+  }
+  if(!navigator.onLine){
+    showToast('オフライン保存にはWi-Fiまたは電波が必要です');
+    return;
+  }
+  navigator.serviceWorker.ready.then(function(reg){
+    if(!reg.active){
+      showToast('Service Workerが準備できていません。少し待ってから再試行してください');
+      return;
+    }
+    var urls = buildTileUrls();
+    showToast('コース範囲を保存中… 合計'+urls.length+'枚');
+    document.getElementById('b-offline').classList.add('active');
+    document.getElementById('b-offline').textContent = '⬇ 保存中...';
+
+    navigator.serviceWorker.addEventListener('message', function onMsg(e){
+      if(e.data.type==='CACHE_PROGRESS'){
+        var pct = Math.round(e.data.done/e.data.total*100);
+        document.getElementById('b-offline').textContent = '⬇ '+pct+'%';
+        showToast('保存中… '+e.data.done+'/'+e.data.total);
+      }
+      if(e.data.type==='CACHE_DONE'){
+        navigator.serviceWorker.removeEventListener('message', onMsg);
+        document.getElementById('b-offline').classList.remove('active');
+        document.getElementById('b-offline').textContent = '✓ 保存済';
+        showToast('✓ '+e.data.total+'枚の地図タイルを保存しました。オフラインで使用可能です！');
+      }
+    });
+
+    reg.active.postMessage({ type:'CACHE_TILES', urls: urls });
+  });
+}
+
+// === PWAインストール ===
+var _deferredInstall = null;
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault(); _deferredInstall = e;
+  showToast('ホーム画面に追加するとオフラインで使えます');
+});
+
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('service-worker.js').catch(function(){});
